@@ -67,6 +67,7 @@ async def receive_submission(request: Request):
 
     jwt_token = generate_jwt()
     install_token = get_install_token(jwt_token)
+    print("Posting issue to:", REPO)
     response = post_github_issue(install_token, title, body)
 
     return {"status": "created", "github_response": response.json()}
