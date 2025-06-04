@@ -8,7 +8,7 @@ colorama==0.4.6
 cryptography==45.0.3
 exceptiongroup==1.3.0
 fastapi==0.115.12
-greenlet==0.4.13
+greenlet==3.0.3
 h11==0.16.0
 hpy==0.9.0
 idna==3.10
