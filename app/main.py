@@ -31,7 +31,6 @@ def get_install_token(jwt_token):
     }
     resp = requests.post(url, headers=headers)
 
-    # Print full GitHub response for debugging
     print("GitHub token response:", resp.status_code, resp.text)
 
     data = resp.json()
@@ -54,20 +53,15 @@ def post_github_issue(token, title, body):
 @app.post("/webhook")
 async def receive_submission(request: Request):
     data = await request.json()
-    field1 = data.get("field1", "N/A")
-    field2 = data.get("field2", "N/A")
-    field3 = data.get("field3", "N/A")
 
-    title = f"Test: {field1}"
-    body = f"""
-**Test**: {field1}
-**Field 2**: {field2}
-**Field 3**: {field3}
-"""
+    issue_name = data["issue_name"]
+    issue_message = data["issue_message"]
+
+    title = issue_name
+    body = issue_message
 
     jwt_token = generate_jwt()
     install_token = get_install_token(jwt_token)
-    print("Posting issue to:", REPO)
     response = post_github_issue(install_token, title, body)
 
     return {"status": "created", "github_response": response.json()}
