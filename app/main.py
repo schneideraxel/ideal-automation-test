@@ -54,7 +54,7 @@ def save_posted_id(paper_id):
 @app.on_event("startup")
 def create_issues_from_csv():
     print("Checking papers.csv and creating issues...")
-    df = pd.read_csv("papers.csv")
+    df = pd.read_csv("app/papers.csv")
     posted_ids = load_posted_ids()
 
     jwt_token = generate_jwt()
