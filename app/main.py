@@ -1,64 +1,69 @@
-from fastapi import FastAPI
+import os
+import time
+import requests
 import pandas as pd
-import os, requests, time, jwt
+from fastapi import FastAPI
+from github import Auth, Github
 
 app = FastAPI()
 
-# GitHub environment setup
-APP_ID = os.getenv("GITHUB_APP_ID")
-INSTALLATION_ID = os.getenv("GITHUB_INSTALLATION_ID")
-REPO = os.getenv("GITHUB_REPO")
+REPO_NAME = "schneideraxel/ideal-automation-test"
+CSV_FILE = "papers.csv"
+POSTED_IDS_FILE = "posted_ids.txt"
 
-# === JWT + GitHub Setup ===
-def generate_jwt():
-    with open("private-key.pem", "r") as f:
-        private_key = f.read()
-    now = int(time.time())
-    payload = {"iat": now, "exp": now + 600, "iss": APP_ID}
-    return jwt.encode(payload, private_key, algorithm="RS256")
+def get_github_client():
+    app_id = os.getenv("GITHUB_APP_ID")
+    installation_id = os.getenv("GITHUB_INSTALLATION_ID")
+    pem_key = os.getenv("GITHUB_PRIVATE_KEY")
 
-def get_install_token(jwt_token):
-    url = f"https://api.github.com/app/installations/{INSTALLATION_ID}/access_tokens"
-    headers = {"Authorization": f"Bearer {jwt_token}", "Accept": "application/vnd.github+json"}
-    resp = requests.post(url, headers=headers)
-    print("GitHub token response:", resp.status_code, resp.text)
-    return resp.json()["token"]
+    auth = Auth.AppAuth(app_id, installation_id, pem_key)
+    gh = Github(auth=auth)
+    return gh.get_repo(REPO_NAME)
 
-def post_github_issue(token, title, body, labels):
-    url = f"https://api.github.com/repos/{REPO}/issues"
-    headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"}
-    json = {"title": title, "body": body, "labels": labels}
-    response = requests.post(url, headers=headers, json=json)
-    print(f"Posted issue ({title}):", response.status_code)
-    return response
+def read_posted_ids():
+    if os.path.exists(POSTED_IDS_FILE):
+        with open(POSTED_IDS_FILE, "r") as f:
+            return set(line.strip() for line in f)
+    return set()
 
-# === Load and Post from CSV on Startup ===
+def write_posted_id(paper_id):
+    with open(POSTED_IDS_FILE, "a") as f:
+        f.write(paper_id + "\n")
+
+def create_issue_with_retry(repo, title, body, labels, paper_id, max_retries=5, delay=60):
+    for attempt in range(max_retries):
+        try:
+            issue = repo.create_issue(title=title, body=body, labels=labels)
+            print(f"Issue posted: {title}")
+            write_posted_id(paper_id)
+            return
+        except Exception as e:
+            print(f"Failed to post issue '{title}' (Attempt {attempt + 1}): {e}")
+            if attempt < max_retries - 1:
+                print(f"Retrying in {delay} seconds...")
+                time.sleep(delay)
+            else:
+                print(f"Gave up on '{title}' after {max_retries} attempts.")
+
 @app.on_event("startup")
 def create_issues_from_csv():
-    print("🔁 Checking papers.csv and creating issues...")
-    jwt_token = generate_jwt()
-    install_token = get_install_token(jwt_token)
-
-    # Load papers.csv
-    df = pd.read_csv("app/papers.csv")
-
-    # Get existing GitHub issue titles
-    url = f"https://api.github.com/repos/{REPO}/issues"
-    headers = {"Authorization": f"Bearer {install_token}", "Accept": "application/vnd.github+json"}
-    existing_issues = requests.get(url, headers=headers).json()
-    existing_titles = set(issue["title"] for issue in existing_issues if "title" in issue)
+    print("Checking papers.csv and creating issues...")
+    df = pd.read_csv(CSV_FILE)
+    repo = get_github_client()
+    posted_ids = read_posted_ids()
 
     for _, row in df.iterrows():
-        title = f"{row['paper_id']} {row['coder']} + {row['supervisor']}"
-        if title in existing_titles:
-            print(f"✅ Skipping existing issue: {title}")
+        paper_id = str(row["paper_id"])
+        if paper_id in posted_ids:
             continue
 
-        body = f"""
-<b>Paper:</b> {row['paper']} ({row['paper_id']})  
-<b>Coder:</b> {row['coder']} ({row['coder_id']})  
-<b>Supervisor:</b> {row['supervisor']} ({row['supervisor_id']})  
-<b>Case ID:</b> {row['paper_coder']}
-"""
+        title = f"{paper_id} {row['coder']} + {row['supervisor']}"
+        body = (
+            f"<b>Paper:</b> {row['paper']} ({row['paper_id']})\n"
+            f"<b>Coder:</b> {row['coder']} ({row['coder_id']})\n"
+            f"<b>Supervisor:</b> {row['supervisor']} ({row['supervisor_id']})\n"
+            f"<b>Case ID:</b> {row['paper_coder']}"
+        )
         labels = [str(row['paper_id']), str(row['coder_id']), str(row['supervisor_id'])]
-        post_github_issue(install_token, title, body, labels)
+
+        create_issue_with_retry(repo, title, body, labels, paper_id)
