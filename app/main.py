@@ -40,7 +40,7 @@ def create_issues_from_csv():
     install_token = get_install_token(jwt_token)
 
     # Load papers.csv
-    df = pd.read_csv("papers.csv")
+    df = pd.read_csv("app/papers.csv")
 
     # Get existing GitHub issue titles
     url = f"https://api.github.com/repos/{REPO}/issues"
