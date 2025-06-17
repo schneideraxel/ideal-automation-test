@@ -80,7 +80,13 @@ def find_issue_number_by_paper_id(paper_id, token):
 # === Webhook endpoint ===
 @app.post("/webhook")
 async def webhook_handler(request: Request):
-    payload = await request.json()
+    try:
+        payload = await request.json()
+        print("Webhook received:", payload)
+    except Exception as e:
+        print("Failed to parse webhook payload:", str(e))
+        return {"error": "Invalid JSON"}
+
     form_id = payload.get("form_id")
     paper_id = payload.get("paper_id")
 
@@ -130,3 +136,4 @@ def create_issues_from_csv():
 """
         labels = [str(row['paper_id']), str(row['coder_id']), str(row['supervisor_id']), str(row['coder']), str(row['supervisor'])]
         post_github_issue(install_token, title, body, labels)
+
