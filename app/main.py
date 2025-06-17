@@ -72,3 +72,8 @@ def create_issues_from_csv():
 """
         labels = [str(row['paper_id']), str(row['coder_id']), str(row['supervisor_id'])]
         post_github_issue(install_token, title, body, labels)
+
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.getenv("PORT", 10000))
+    uvicorn.run("main:app", host="0.0.0.0", port=port)
