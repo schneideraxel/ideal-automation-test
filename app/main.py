@@ -24,22 +24,12 @@ def get_install_token(jwt_token):
     print("GitHub token response:", resp.status_code, resp.text)
     return resp.json()["token"]
 
-def post_github_issue(token, title, body, labels, retries=3, delay=60):
+def post_github_issue(token, title, body, labels):
     url = f"https://api.github.com/repos/{REPO}/issues"
     headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"}
     json = {"title": title, "body": body, "labels": labels}
-
-    attempt = 0
-    while attempt < retries:
-        response = requests.post(url, headers=headers, json=json)
-        if response.status_code == 201:
-            print(f"Issue created: {title}")
-            return response
-        else:
-            print(f"Failed to post issue ({title}), attempt {attempt+1}/{retries}, status: {response.status_code}")
-            time.sleep(delay)
-            attempt += 1
-    print(f"Giving up on issue: {title} after {retries} attempts")
+    response = requests.post(url, headers=headers, json=json)
+    print(f"Posted issue ({title}):", response.status_code)
     return response
 
 # === Load and Post from CSV on Startup ===
@@ -72,8 +62,3 @@ def create_issues_from_csv():
 """
         labels = [str(row['paper_id']), str(row['coder_id']), str(row['supervisor_id'])]
         post_github_issue(install_token, title, body, labels)
-
-if __name__ == "__main__":
-    import uvicorn
-    port = int(os.getenv("PORT", 10000))
-    uvicorn.run("main:app", host="0.0.0.0", port=port)
