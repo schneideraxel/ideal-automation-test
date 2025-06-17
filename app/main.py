@@ -117,7 +117,7 @@ def create_issues_from_csv():
     existing_titles = set(issue["title"] for issue in existing_issues if "title" in issue)
 
     for _, row in df.iterrows():
-        title = f"{row['paper_id']} {row['coder']} + {row['supervisor']}"
+        title = f"{row['paper_id']}"
         if title in existing_titles:
             print(f"Skipping existing issue: {title}")
             continue
@@ -128,5 +128,5 @@ def create_issues_from_csv():
 <b>Supervisor:</b> {row['supervisor']} ({row['supervisor_id']})  <br>
 <b>Case ID:</b> {row['paper_coder']}
 """
-        labels = [str(row['paper_id']), str(row['coder_id']), str(row['supervisor_id'])]
+        labels = [str(row['paper_id']), str(row['coder_id']), str(row['supervisor_id']), str(row['coder']), str(row['supervisor'])]
         post_github_issue(install_token, title, body, labels)
