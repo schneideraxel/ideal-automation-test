@@ -1,75 +1,74 @@
-from fastapi import FastAPI, Request
-import requests, time, jwt, os
+from fastapi import FastAPI
+import pandas as pd
+import os, requests, time, jwt
 
 app = FastAPI()
 
-# Load from environment
+# GitHub environment setup
 APP_ID = os.getenv("GITHUB_APP_ID")
 INSTALLATION_ID = os.getenv("GITHUB_INSTALLATION_ID")
-REPO = os.getenv("GITHUB_REPO")  # e.g., "schneideraxel/ideal-automation-test"
+REPO = os.getenv("GITHUB_REPO")
 
-# === Step 1: Create GitHub App JWT ===
+# === JWT + GitHub Setup ===
 def generate_jwt():
     with open("private-key.pem", "r") as f:
         private_key = f.read()
-
     now = int(time.time())
-    payload = {
-        "iat": now,
-        "exp": now + 600,
-        "iss": APP_ID
-    }
-
+    payload = {"iat": now, "exp": now + 600, "iss": APP_ID}
     return jwt.encode(payload, private_key, algorithm="RS256")
 
-# === Step 2: Get Installation Token ===
 def get_install_token(jwt_token):
     url = f"https://api.github.com/app/installations/{INSTALLATION_ID}/access_tokens"
-    headers = {
-        "Authorization": f"Bearer {jwt_token}",
-        "Accept": "application/vnd.github+json"
-    }
+    headers = {"Authorization": f"Bearer {jwt_token}", "Accept": "application/vnd.github+json"}
     resp = requests.post(url, headers=headers)
-
-    # Print full GitHub response for debugging
     print("GitHub token response:", resp.status_code, resp.text)
+    return resp.json()["token"]
 
-    data = resp.json()
-    if "token" not in data:
-        raise Exception(f"GitHub error: {data}")
-
-    return data["token"]
-
-# === Step 3: Post GitHub Issue ===
-def post_github_issue(token, title, body):
+def post_github_issue(token, title, body, labels, retries=3, delay=60):
     url = f"https://api.github.com/repos/{REPO}/issues"
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Accept": "application/vnd.github+json"
-    }
-    json = {"title": title, "body": body}
-    return requests.post(url, headers=headers, json=json)
+    headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"}
+    json = {"title": title, "body": body, "labels": labels}
 
-# === Webhook Endpoint ===
-@app.post("/webhook")
-async def receive_submission(request: Request):
-    data = await request.json()
-    field1 = data.get("field1")
-    field2 = data.get("field2")
-    field3 = data.get("field3")
+    attempt = 0
+    while attempt < retries:
+        response = requests.post(url, headers=headers, json=json)
+        if response.status_code == 201:
+            print(f"Issue created: {title}")
+            return response
+        else:
+            print(f"Failed to post issue ({title}), attempt {attempt+1}/{retries}, status: {response.status_code}")
+            time.sleep(delay)
+            attempt += 1
+    print(f"Giving up on issue: {title} after {retries} attempts")
+    return response
 
-    if not field1 or not field2 or not field3:
-        return {"error": "Missing required fields"}
-
-    title = f"{field1}"
-    body = f"""
-<b>Test:</b> {field1}<br>
-<b>Field 2:</b> {field2}<br>
-<b>Field 3:</b> {field3}
-"""
-
+# === Load and Post from CSV on Startup ===
+@app.on_event("startup")
+def create_issues_from_csv():
+    print("Checking papers.csv and creating issues...")
     jwt_token = generate_jwt()
     install_token = get_install_token(jwt_token)
-    response = post_github_issue(install_token, title, body)
 
-    return {"status": "created", "github_response": response.json()}
+    # Load papers.csv
+    df = pd.read_csv("app/papers.csv")
+
+    # Get existing GitHub issue titles
+    url = f"https://api.github.com/repos/{REPO}/issues"
+    headers = {"Authorization": f"Bearer {install_token}", "Accept": "application/vnd.github+json"}
+    existing_issues = requests.get(url, headers=headers).json()
+    existing_titles = set(issue["title"] for issue in existing_issues if "title" in issue)
+
+    for _, row in df.iterrows():
+        title = f"{row['paper_id']} {row['coder']} + {row['supervisor']}"
+        if title in existing_titles:
+            print(f"Skipping existing issue: {title}")
+            continue
+
+        body = f"""
+<b>Paper:</b> {row['paper']} ({row['paper_id']})  
+<b>Coder:</b> {row['coder']} ({row['coder_id']})  
+<b>Supervisor:</b> {row['supervisor']} ({row['supervisor_id']})  
+<b>Case ID:</b> {row['paper_coder']}
+"""
+        labels = [str(row['paper_id']), str(row['coder_id']), str(row['supervisor_id'])]
+        post_github_issue(install_token, title, body, labels)
