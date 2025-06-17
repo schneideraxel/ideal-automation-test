@@ -30,13 +30,16 @@ def post_github_issue(token, title, body, labels):
     headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"}
     payload = {"title": title, "body": body, "labels": labels}
 
+    attempt = 0
     while True:
         response = requests.post(url, headers=headers, json=payload)
         if response.status_code == 201:
             print(f"Issue created: {title}")
             return True
         else:
-            print(f"Failed to post issue: {title}, status {response.status_code}, retrying in 60 seconds...")
+            attempt += 1
+            print(f"[Attempt {attempt}] Failed to post issue: {title}, status {response.status_code}")
+            print("Retrying in 60 seconds...")
             time.sleep(60)
 
 # === Track Already Posted Issues ===
